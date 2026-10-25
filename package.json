@@ -1,0 +1,57 @@
+{
+  "name": "bb-plugin-focus-sidebar",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.47",
+    "bbPluginSdk": ">=0.6.79"
+  },
+  "bb": {
+    "name": "Focus Sidebar",
+    "description": "Keep only the threads from the last few hours in your sidebar. Older ones move to a dated Archive; search and close are one click away.",
+    "branding": {
+      "icon": "Target"
+    },
+    "server": "./server.ts",
+    "app": "./app.tsx",
+    "skills": [
+      "skills"
+    ]
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.6.79",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "clsx": "^2.1.1",
+    "hono": "^4.13.14",
+    "tailwind-merge": "^3.4.0",
+    "typescript": "^5.7.0"
+  },
+  "description": "Focus on today's bb threads: recent ones up top, older ones in a dated Archive, with search and a close button.",
+  "keywords": [
+    "bb-plugin",
+    "bb",
+    "sidebar",
+    "threads",
+    "focus",
+    "archive",
+    "search"
+  ],
+  "license": "MIT",
+  "author": "Grigory Shimichev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/grishaster80/bb-plugin-focus-sidebar.git"
+  },
+  "homepage": "https://github.com/grishaster80/bb-plugin-focus-sidebar#readme",
+  "scripts": {
+    "build": "bb plugin build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  }
+}
