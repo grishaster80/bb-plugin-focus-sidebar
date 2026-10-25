@@ -8,8 +8,10 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import {
   definePluginApp,
+  experimental_ProviderIcon as ProviderIcon,
   experimental_ThreadActionsContextMenu as ThreadActionsContextMenu,
   experimental_ThreadStatusGlyph as ThreadStatusGlyph,
+  experimental_useProviders as useProviders,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
   experimental_useSidebarThreads as useSidebarThreads,
   experimental_useThreadActions as useThreadActions,
@@ -176,17 +178,40 @@ function CloseButton({
   );
 }
 
-function RowGlyph({ thread }: { thread: PluginSidebarThread }) {
+/** The agent's small logo (Claude Code, Codex, …) in front of a title. */
+function ProviderGlyph({ providerId }: { providerId: string }) {
+  const { providers } = useProviders();
+  const provider = providers.find((candidate) => candidate.id === providerId);
+  return (
+    <span
+      className="flex size-4 shrink-0 items-center justify-center text-muted-foreground"
+      title={provider?.displayName ?? providerId}
+    >
+      <ProviderIcon
+        providerKind="agent"
+        provider={provider ?? { id: providerId }}
+        fallback="Bot"
+        className="size-3"
+        aria-hidden
+      />
+    </span>
+  );
+}
+
+/** bb's status glyph (running, unread, waiting…), drawn only when there is one. */
+function StatusGlyph({ thread }: { thread: PluginSidebarThread }) {
   const rowStatus = useSidebarThreadRowStatus(thread.id);
   const { hasUnsubmittedDraft } = useSidebarThreadDraft(thread.id);
   const indicator =
     thread.indicator === "none" && hasUnsubmittedDraft ? "draft" : thread.indicator;
+  const archived = thread.isArchived && indicator === "none";
+  if (indicator === "none" && rowStatus === null && !archived) return null;
   return (
-    <span className="flex size-4 shrink-0 items-center justify-center">
+    <span className="relative flex size-4 shrink-0 items-center justify-center">
       <ThreadStatusGlyph
         indicator={indicator}
         rowStatus={rowStatus}
-        archived={thread.isArchived && indicator === "none"}
+        archived={archived}
         size="compact"
       />
     </span>
@@ -249,7 +274,7 @@ const ThreadRow = memo(function ThreadRow({
             />
           </button>
         ) : null}
-        <RowGlyph thread={thread} />
+        <ProviderGlyph providerId={thread.providerId} />
         <a
           {...splitProps}
           href={thread.href}
@@ -276,6 +301,7 @@ const ThreadRow = memo(function ThreadRow({
             </span>
           ) : null}
         </a>
+        <StatusGlyph thread={thread} />
         <span className="relative shrink-0 text-[11px] tabular-nums text-muted-foreground group-hover/row:hidden group-focus-within/row:hidden [@media(hover:none)]:hidden">
           {timeStyle === "clock" ? formatClock(tree.lastActivity) : formatAge(tree.lastActivity, now)}
         </span>
@@ -326,6 +352,7 @@ function TreeRows({
 interface MessageHit {
   threadId: string;
   projectId: string;
+  providerId: string;
   title: string;
   archived: boolean;
   updatedAt: number;
@@ -361,6 +388,7 @@ function useMessageSearch(query: string): { hits: MessageHit[]; loading: boolean
               hits.push({
                 threadId: thread.id,
                 projectId: thread.projectId,
+                providerId: thread.providerId,
                 title: thread.title ?? thread.titleFallback ?? thread.id,
                 archived,
                 updatedAt: thread.updatedAt,
@@ -448,14 +476,13 @@ function MessageHitRow({
       )}
     >
       <span className="flex items-center gap-1.5">
-        {hit.archived ? (
-          <Icon
-            name="Archive"
-            className="absolute left-2 top-2.5 size-3 text-muted-foreground"
-            aria-label="Closed"
-          />
-        ) : null}
+        <span className="absolute left-1.5 top-2">
+          <ProviderGlyph providerId={hit.providerId} />
+        </span>
         <span className="min-w-0 flex-1 truncate">{hit.title}</span>
+        {hit.archived ? (
+          <Icon name="Archive" className="size-3 shrink-0 text-muted-foreground" aria-label="Closed" />
+        ) : null}
         <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
           {formatAge(hit.updatedAt, now)}
         </span>
