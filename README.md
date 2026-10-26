@@ -5,7 +5,7 @@ Keep only the threads you are working on right now in the [bb](https://getbb.app
 Focus Sidebar replaces bb's thread list with two tabs:
 
 - **Focus** shows the threads with activity in the last few hours (8 by default; pick 2, 4, 6, 8, 12 or 24). A thread that is running, waiting for your answer, has a queued message, or is pinned always stays in Focus, however old it is.
-- Threads that bb's automations run on a schedule stay out of Focus, so a job that ticks every few minutes doesn't fill it. They come to Focus only when pinned or waiting for your answer; turn on **Auto** in the Focus tab to treat them like any other thread.
+- Threads that bb's automations run on a schedule fold into an **Automations** group at the bottom of Focus, so a job that ticks every few minutes doesn't fill the list. Click the group to unfold it. An automation thread that waits for your answer, or that you pinned, moves up into Focus; one that went quiet goes to Archive.
 - **Archive** shows everything older, grouped by day (Today, Yesterday, the weekday, then the date), newest first. Turn on **Closed** to list the threads you closed too.
 
 Above the tabs is a **search box**. It matches thread titles, project names and branches instantly, then adds matches from message text across open and closed threads, with the matching words highlighted.
@@ -26,13 +26,13 @@ bb switches the sidebar to Focus Sidebar automatically. To go back to bb's own l
 
 ## Settings
 
-The focus window and the Auto and Closed switches are in the list header. They are stored on the bb server, so every device that connects to it (desktop, laptop, phone) sees the same setting. The same settings from a terminal:
+The focus window and the Closed switch are in the list header. They are stored on the bb server, so every device that connects to it (desktop, laptop, phone) sees the same setting. The same settings from a terminal:
 
 ```sh
 bb focus-sidebar show
 bb focus-sidebar hours 6        # keep the last 6 hours in Focus
 bb focus-sidebar closed on      # list closed threads in Archive
-bb focus-sidebar automations on # let automation threads into Focus
+bb focus-sidebar automations on # mix automation threads into Focus instead of folding them
 ```
 
 ## Develop

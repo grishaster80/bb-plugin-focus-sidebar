@@ -40,13 +40,18 @@ function thread(id: string, hoursAgo: number, extra: Partial<FocusThread> = {}):
 }
 
 const split = (threads: FocusThread[]) => {
-  const { focus, archive } = partitionTrees(buildTrees(threads), { now: NOW, focusHours: 8 });
-  return { focus: focus.map((t) => t.thread.id), archive: archive.map((t) => t.thread.id) };
+  const { focus, automations, archive } = partitionTrees(buildTrees(threads), {
+    now: NOW,
+    focusHours: 8,
+  });
+  const ids = (trees: typeof focus) => trees.map((t) => t.thread.id);
+  return { focus: ids(focus), automations: ids(automations), archive: ids(archive) };
 };
 
 test("recent threads stay in Focus, older ones go to Archive", () => {
   assert.deepEqual(split([thread("a", 1), thread("b", 7.9), thread("c", 9), thread("d", 50)]), {
     focus: ["a", "b"],
+    automations: [],
     archive: ["c", "d"],
   });
 });
@@ -66,25 +71,28 @@ test("running, waiting, queued and pinned threads stay in Focus", () => {
   assert.equal(result.focus.length, 4);
 });
 
-test("automation threads stay in Archive while recent or running", () => {
+test("recent automation threads fold into their own group, quiet ones go to Archive", () => {
   const auto = { originPluginId: "automations" };
   const result = split([
     thread("recent", 0.1, auto),
-    thread("running", 0.1, { ...auto, status: "active" }),
+    thread("running", 30, { ...auto, status: "active" }),
+    thread("quiet", 30, auto),
     thread("asks", 0.1, { ...auto, hasPendingInteraction: true }),
     thread("pinned", 30, { ...auto, isPinned: true }),
     thread("mine", 0.1),
   ]);
   assert.deepEqual(result.focus.sort(), ["asks", "mine", "pinned"]);
-  assert.deepEqual(result.archive.sort(), ["recent", "running"]);
+  assert.deepEqual(result.automations.sort(), ["recent", "running"]);
+  assert.deepEqual(result.archive, ["quiet"]);
 });
 
 test("automation threads behave like any other with showAutomations on", () => {
-  const { focus } = partitionTrees(
+  const { focus, automations } = partitionTrees(
     buildTrees([thread("recent", 1, { originPluginId: "automations" })]),
     { now: NOW, focusHours: 8, showAutomations: true },
   );
   assert.deepEqual(focus.map((t) => t.thread.id), ["recent"]);
+  assert.deepEqual(automations, []);
 });
 
 test("closed threads always go to Archive", () => {

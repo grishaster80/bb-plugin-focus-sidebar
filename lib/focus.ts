@@ -145,23 +145,31 @@ export function treeHasUnread<T extends FocusThread>(tree: ThreadTree<T>): boole
  * had activity inside the window, is pinned, or is running or waiting for
  * the user. Closed (bb-archived) trees always go to the Archive. Opening a
  * thread does not move it: only new activity brings it back to Focus.
- * Unless `showAutomations` is on, an automation tree stays in Archive however
- * often it runs, and comes to Focus only when pinned or waiting for the user.
+ * An automation tree that ticks every few minutes would never leave Focus, so
+ * unless `showAutomations` is on it goes to `automations` instead (a folded
+ * group under Focus), and only a pinned one or one waiting for the user stays
+ * in Focus itself. Automation trees that went quiet go to Archive as usual.
  */
 export function partitionTrees<T extends FocusThread>(
   trees: readonly ThreadTree<T>[],
   options: { now: number; focusHours: number; showAutomations?: boolean },
-): { focus: ThreadTree<T>[]; archive: ThreadTree<T>[] } {
+): { focus: ThreadTree<T>[]; automations: ThreadTree<T>[]; archive: ThreadTree<T>[] } {
   const cutoff = options.now - options.focusHours * HOUR_MS;
   const focus: ThreadTree<T>[] = [];
+  const automations: ThreadTree<T>[] = [];
   const archive: ThreadTree<T>[] = [];
   for (const tree of trees) {
-    const keep =
-      !tree.thread.isArchived &&
-      (options.showAutomations !== true && isAutomationThread(tree.thread)
-        ? tree.thread.isPinned || treeWaitsForUser(tree)
-        : tree.lastActivity >= cutoff || tree.thread.isPinned || tree.isLive);
-    (keep ? focus : archive).push(tree);
+    if (tree.thread.isArchived) {
+      archive.push(tree);
+      continue;
+    }
+    const recent = tree.lastActivity >= cutoff || tree.isLive;
+    if (options.showAutomations !== true && isAutomationThread(tree.thread)) {
+      if (tree.thread.isPinned || treeWaitsForUser(tree)) focus.push(tree);
+      else (recent ? automations : archive).push(tree);
+      continue;
+    }
+    (recent || tree.thread.isPinned ? focus : archive).push(tree);
   }
   // Pinned threads lead Focus, then newest first.
   focus.sort(
@@ -169,7 +177,7 @@ export function partitionTrees<T extends FocusThread>(
       Number(b.thread.isPinned) - Number(a.thread.isPinned) ||
       b.lastActivity - a.lastActivity,
   );
-  return { focus, archive };
+  return { focus, automations, archive };
 }
 
 function startOfLocalDay(time: number): number {

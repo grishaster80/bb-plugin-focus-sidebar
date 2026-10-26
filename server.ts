@@ -68,14 +68,14 @@ export default async function plugin(bb: BbPluginApi) {
     "  bb focus-sidebar show [--json]           Print the current settings",
     "  bb focus-sidebar hours <1-168> [--json]  Keep threads active in the last N hours in Focus",
     "  bb focus-sidebar closed <on|off> [--json] Show closed (archived) threads in the Archive tab",
-    "  bb focus-sidebar automations <on|off> [--json] Let automation threads into Focus like any other thread",
+    "  bb focus-sidebar automations <on|off> [--json] Mix automation threads into Focus (on) or fold them into their group (off)",
   ].join("\n");
 
   const describe = (prefs: FocusPrefs) =>
     [
       `Focus window: last ${prefs.focusHours}h`,
       `Closed threads in Archive: ${prefs.showClosed ? "shown" : "hidden"}`,
-      `Automation threads: ${prefs.showAutomations ? "in Focus when active" : "in Archive unless waiting for you"}`,
+      `Automation threads: ${prefs.showAutomations ? "mixed into Focus" : "folded into the Automations group"}`,
     ].join("\n");
 
   bb.cli.register({
@@ -95,7 +95,7 @@ export default async function plugin(bb: BbPluginApi) {
       },
       {
         name: "automations",
-        summary: "Let automation threads into Focus (on) or keep them in Archive (off)",
+        summary: "Mix automation threads into Focus (on) or fold them into the Automations group (off)",
         usage: "bb focus-sidebar automations <on|off> [--json]",
       },
     ],

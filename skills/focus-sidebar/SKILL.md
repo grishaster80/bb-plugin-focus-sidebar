@@ -9,8 +9,9 @@ The Focus Sidebar plugin replaces bb's sidebar thread list with two tabs:
 
 - **Focus**: threads with activity inside the focus window (default 8 hours),
   plus any thread that is running, waiting for user input, has queued work, or
-  is pinned. Automation threads stay out unless pinned or waiting for user
-  input, until the automations setting is on.
+  is pinned. Active automation threads sit in a folded "Automations" group
+  at the bottom of Focus unless pinned or waiting for user input; with the
+  automations setting on they are mixed in like any other thread.
 - **Archive**: every other thread, grouped by day, newest first. With the
   Closed setting on, it also lists archived ("closed") threads.
 
@@ -24,7 +25,7 @@ archive; it is not automatic.
 bb focus-sidebar show [--json]             # current settings
 bb focus-sidebar hours <1-168> [--json]    # set the focus window in hours
 bb focus-sidebar closed <on|off> [--json]  # list closed threads in Archive
-bb focus-sidebar automations <on|off> [--json]  # let automation threads into Focus
+bb focus-sidebar automations <on|off> [--json]  # on: mix automation threads into Focus; off: fold them
 ```
 
 Settings are stored on the bb server and apply to every connected window and

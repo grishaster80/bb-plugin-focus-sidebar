@@ -50,6 +50,7 @@ import type { FocusPrefs, rpcContract } from "./server";
 const PREFS_CHANGED = "prefs-changed";
 const ARCHIVE_ACTION_KEY = "bb--core/archive";
 const TAB_STORAGE_KEY = "focus-sidebar:tab";
+const AUTOMATIONS_OPEN_STORAGE_KEY = "focus-sidebar:automations-open";
 const ARCHIVE_PAGE = 150;
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -110,6 +111,28 @@ function useStoredTab(): [Tab, (tab: Tab) => void] {
     }
   }, []);
   return [tab, update];
+}
+
+/** Whether the Automations group under Focus is unfolded, per device. */
+function useStoredAutomationsOpen(): [boolean, () => void] {
+  const [open, setOpen] = useState(() => {
+    try {
+      return window.localStorage.getItem(AUTOMATIONS_OPEN_STORAGE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggle = useCallback(() => {
+    setOpen((current) => {
+      try {
+        window.localStorage.setItem(AUTOMATIONS_OPEN_STORAGE_KEY, current ? "0" : "1");
+      } catch {
+        // Private mode: the group just is not remembered.
+      }
+      return !current;
+    });
+  }, []);
+  return [open, toggle];
 }
 
 function actionTarget(thread: PluginSidebarThread): PluginThreadActionTarget {
@@ -605,6 +628,44 @@ function GroupHeader({ children }: { children: ReactNode }) {
   );
 }
 
+/** Folded group of active automation threads at the bottom of Focus. */
+function AutomationsGroup({
+  trees,
+  open,
+  onToggle,
+  children,
+}: {
+  trees: readonly Tree[];
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  const running = trees.some((tree) => tree.isLive);
+  return (
+    <section aria-label="Automations" className="mt-2">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        title="Threads that bb's automations run on a schedule. They are folded here so a job that runs every few minutes doesn't crowd Focus; one that waits for your answer moves up into Focus."
+        className="flex w-full items-center gap-1 rounded px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground hover:text-sidebar-foreground"
+      >
+        <Icon
+          name="ChevronRight"
+          className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")}
+          aria-hidden
+        />
+        Automations
+        <Count value={trees.length} dot={trees.some(treeHasUnread)} />
+        {running && !open ? (
+          <span className="ml-auto normal-case tracking-normal opacity-70">running</span>
+        ) : null}
+      </button>
+      {open ? children : null}
+    </section>
+  );
+}
+
 function EmptyNote({ children }: { children: ReactNode }) {
   return <p className="px-2 py-6 text-center text-xs text-muted-foreground">{children}</p>;
 }
@@ -615,6 +676,7 @@ function EmptyNote({ children }: { children: ReactNode }) {
 function FocusThreadList({ activeThreadId, onNavigate }: PluginThreadListProps) {
   const [prefs, setPrefs] = usePrefs();
   const [tab, setTab] = useStoredTab();
+  const [automationsOpen, toggleAutomations] = useStoredAutomationsOpen();
   const [query, setQuery] = useState("");
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
   const [archiveLimit, setArchiveLimit] = useState(ARCHIVE_PAGE);
@@ -636,7 +698,7 @@ function FocusThreadList({ activeThreadId, onNavigate }: PluginThreadListProps) 
   );
 
   const trees = useMemo(() => buildTrees(threads), [threads]);
-  const { focus, archive } = useMemo(
+  const { focus, automations, archive } = useMemo(
     () =>
       partitionTrees(trees, {
         now,
@@ -727,24 +789,45 @@ function FocusThreadList({ activeThreadId, onNavigate }: PluginThreadListProps) 
       </>
     );
   } else if (tab === "focus") {
-    body =
-      focus.length === 0 ? (
-        <EmptyNote>
-          Nothing active in the last {prefs.focusHours}h.
-          {archive.length > 0 ? " Older threads are in Archive." : ""}
-        </EmptyNote>
-      ) : (
-        focus.map((tree) => (
-          <TreeRows
-            key={tree.thread.id}
-            {...rowProps}
-            tree={tree}
-            depth={0}
-            timeStyle="age"
-            projectName={projectNames.get(tree.thread.projectId)}
-          />
-        ))
-      );
+    body = (
+      <>
+        {focus.length === 0 ? (
+          <EmptyNote>
+            Nothing active in the last {prefs.focusHours}h.
+            {archive.length > 0 ? " Older threads are in Archive." : ""}
+          </EmptyNote>
+        ) : (
+          focus.map((tree) => (
+            <TreeRows
+              key={tree.thread.id}
+              {...rowProps}
+              tree={tree}
+              depth={0}
+              timeStyle="age"
+              projectName={projectNames.get(tree.thread.projectId)}
+            />
+          ))
+        )}
+        {automations.length > 0 ? (
+          <AutomationsGroup
+            trees={automations}
+            open={automationsOpen}
+            onToggle={toggleAutomations}
+          >
+            {automations.map((tree) => (
+              <TreeRows
+                key={tree.thread.id}
+                {...rowProps}
+                tree={tree}
+                depth={0}
+                timeStyle="age"
+                projectName={projectNames.get(tree.thread.projectId)}
+              />
+            ))}
+          </AutomationsGroup>
+        ) : null}
+      </>
+    );
   } else {
     const visible = archive.slice(0, archiveLimit);
     const groups = groupByDay(visible, now);
@@ -809,20 +892,6 @@ function FocusThreadList({ activeThreadId, onNavigate }: PluginThreadListProps) 
               Archive
             </TabButton>
             <span className="flex-1" />
-            {tab === "focus" ? (
-              <label
-                className="flex h-6 cursor-pointer items-center gap-1 rounded px-1.5 text-xs text-muted-foreground hover:text-sidebar-foreground"
-                title="Let automation threads into Focus. Off: they stay in Archive unless they wait for you"
-              >
-                <input
-                  type="checkbox"
-                  className="size-3 accent-current"
-                  checked={prefs.showAutomations}
-                  onChange={(event) => setPrefs({ showAutomations: event.target.checked })}
-                />
-                Auto
-              </label>
-            ) : null}
             {tab === "archive" ? (
               <label
                 className="flex h-6 cursor-pointer items-center gap-1 rounded px-1.5 text-xs text-muted-foreground hover:text-sidebar-foreground"
