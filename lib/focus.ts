@@ -14,6 +14,7 @@ export interface FocusThread {
   id: string;
   parentThreadId: string | null;
   projectId: string;
+  originPluginId: string | null;
   displayTitle: string;
   status: string;
   hasPendingInteraction: boolean;
@@ -46,6 +47,7 @@ export interface DayGroup<T extends FocusThread> {
 }
 
 const BUSY_STATUSES = new Set(["starting", "active", "stopping", "pending"]);
+const AUTOMATIONS_PLUGIN_ID = "automations";
 
 export function lastActivityOf(thread: FocusThread): number {
   return Math.max(thread.updatedAt, thread.latestAttentionAt || 0);
@@ -59,6 +61,11 @@ export function isLiveThread(thread: FocusThread): boolean {
     thread.hasPendingInteraction ||
     thread.queuedWork !== "none"
   );
+}
+
+/** Spawned or re-prompted on a schedule by bb's automations plugin. */
+export function isAutomationThread(thread: FocusThread): boolean {
+  return thread.originPluginId === AUTOMATIONS_PLUGIN_ID;
 }
 
 /**
@@ -121,6 +128,10 @@ export function treeContains<T extends FocusThread>(
   return tree.children.some((child) => treeContains(child, threadId));
 }
 
+function treeWaitsForUser<T extends FocusThread>(tree: ThreadTree<T>): boolean {
+  return tree.thread.hasPendingInteraction || tree.children.some(treeWaitsForUser);
+}
+
 export function countTree<T extends FocusThread>(tree: ThreadTree<T>): number {
   return 1 + tree.children.reduce((sum, child) => sum + countTree(child), 0);
 }
@@ -134,10 +145,12 @@ export function treeHasUnread<T extends FocusThread>(tree: ThreadTree<T>): boole
  * had activity inside the window, is pinned, or is running or waiting for
  * the user. Closed (bb-archived) trees always go to the Archive. Opening a
  * thread does not move it: only new activity brings it back to Focus.
+ * Unless `showAutomations` is on, an automation tree stays in Archive however
+ * often it runs, and comes to Focus only when pinned or waiting for the user.
  */
 export function partitionTrees<T extends FocusThread>(
   trees: readonly ThreadTree<T>[],
-  options: { now: number; focusHours: number },
+  options: { now: number; focusHours: number; showAutomations?: boolean },
 ): { focus: ThreadTree<T>[]; archive: ThreadTree<T>[] } {
   const cutoff = options.now - options.focusHours * HOUR_MS;
   const focus: ThreadTree<T>[] = [];
@@ -145,9 +158,9 @@ export function partitionTrees<T extends FocusThread>(
   for (const tree of trees) {
     const keep =
       !tree.thread.isArchived &&
-      (tree.lastActivity >= cutoff ||
-        tree.thread.isPinned ||
-        tree.isLive);
+      (options.showAutomations !== true && isAutomationThread(tree.thread)
+        ? tree.thread.isPinned || treeWaitsForUser(tree)
+        : tree.lastActivity >= cutoff || tree.thread.isPinned || tree.isLive);
     (keep ? focus : archive).push(tree);
   }
   // Pinned threads lead Focus, then newest first.

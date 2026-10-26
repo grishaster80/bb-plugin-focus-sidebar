@@ -21,6 +21,7 @@ function thread(id: string, hoursAgo: number, extra: Partial<FocusThread> = {}):
     id,
     parentThreadId: null,
     projectId: "proj",
+    originPluginId: null,
     displayTitle: `Thread ${id}`,
     status: "idle",
     hasPendingInteraction: false,
@@ -63,6 +64,27 @@ test("running, waiting, queued and pinned threads stay in Focus", () => {
   assert.deepEqual(result.archive, ["old"]);
   assert.equal(result.focus[0], "pin");
   assert.equal(result.focus.length, 4);
+});
+
+test("automation threads stay in Archive while recent or running", () => {
+  const auto = { originPluginId: "automations" };
+  const result = split([
+    thread("recent", 0.1, auto),
+    thread("running", 0.1, { ...auto, status: "active" }),
+    thread("asks", 0.1, { ...auto, hasPendingInteraction: true }),
+    thread("pinned", 30, { ...auto, isPinned: true }),
+    thread("mine", 0.1),
+  ]);
+  assert.deepEqual(result.focus.sort(), ["asks", "mine", "pinned"]);
+  assert.deepEqual(result.archive.sort(), ["recent", "running"]);
+});
+
+test("automation threads behave like any other with showAutomations on", () => {
+  const { focus } = partitionTrees(
+    buildTrees([thread("recent", 1, { originPluginId: "automations" })]),
+    { now: NOW, focusHours: 8, showAutomations: true },
+  );
+  assert.deepEqual(focus.map((t) => t.thread.id), ["recent"]);
 });
 
 test("closed threads always go to Archive", () => {

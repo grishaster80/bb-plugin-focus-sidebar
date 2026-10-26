@@ -4,6 +4,7 @@ A long thread list makes it hard to see what you are doing today. Focus Sidebar 
 
 - **Focus tab** with the threads that had activity in the last 8 hours. Change the window to 2, 4, 6, 12 or 24 hours from the list header.
 - Threads that are **running, waiting for your answer, have a queued message, or are pinned** stay in Focus however old they are, so nothing that needs you drops out of sight.
+- **Automation threads stay out of Focus.** A scheduled job that runs every few minutes would otherwise never leave it; it shows up in Focus only when pinned or waiting for your answer. Turn on **Auto** to treat it like any other thread.
 - **Archive tab** with every older thread, grouped by day (Today, Yesterday, the weekday, then the date) and sorted newest first. A blue dot on the tab tells you an unread thread is in there.
 - **Closed** switch in Archive that also lists the threads you closed, with a button to reopen each one.
 - **Search** at the top of the list. Titles, project names and branches match as you type; matches inside message text follow, with the matched words highlighted.
@@ -14,7 +15,7 @@ A long thread list makes it hard to see what you are doing today. Focus Sidebar 
 
 Threads move between Focus and Archive by their latest activity only. The plugin never archives a thread for you, so worktrees, terminals and running agents are left alone until you press close.
 
-The focus window and the Closed switch are stored on your bb server, so the desktop app, a laptop and the phone show the same list. You can also set them from a terminal with `bb focus-sidebar hours 6` or `bb focus-sidebar closed on`.
+The focus window and the Auto and Closed switches are stored on your bb server, so the desktop app, a laptop and the phone show the same list. You can also set them from a terminal with `bb focus-sidebar hours 6` or `bb focus-sidebar closed on`.
 
 ## Switching back
 

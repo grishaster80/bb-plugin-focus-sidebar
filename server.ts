@@ -9,12 +9,14 @@ import { clampFocusHours, DEFAULT_FOCUS_HOURS } from "./lib/focus";
 const prefsSchema = z.object({
   focusHours: z.number().int().min(1).max(168),
   showClosed: z.boolean(),
+  showAutomations: z.boolean(),
 });
 export type FocusPrefs = z.infer<typeof prefsSchema>;
 
 const DEFAULT_PREFS: FocusPrefs = {
   focusHours: DEFAULT_FOCUS_HOURS,
   showClosed: false,
+  showAutomations: false,
 };
 
 export const rpcContract = defineRpcContract({
@@ -41,6 +43,10 @@ export default async function plugin(bb: BbPluginApi) {
         typeof stored?.showClosed === "boolean"
           ? stored.showClosed
           : DEFAULT_PREFS.showClosed,
+      showAutomations:
+        typeof stored?.showAutomations === "boolean"
+          ? stored.showAutomations
+          : DEFAULT_PREFS.showAutomations,
     };
   }
 
@@ -62,17 +68,19 @@ export default async function plugin(bb: BbPluginApi) {
     "  bb focus-sidebar show [--json]           Print the current settings",
     "  bb focus-sidebar hours <1-168> [--json]  Keep threads active in the last N hours in Focus",
     "  bb focus-sidebar closed <on|off> [--json] Show closed (archived) threads in the Archive tab",
+    "  bb focus-sidebar automations <on|off> [--json] Let automation threads into Focus like any other thread",
   ].join("\n");
 
   const describe = (prefs: FocusPrefs) =>
     [
       `Focus window: last ${prefs.focusHours}h`,
       `Closed threads in Archive: ${prefs.showClosed ? "shown" : "hidden"}`,
+      `Automation threads: ${prefs.showAutomations ? "in Focus when active" : "in Archive unless waiting for you"}`,
     ].join("\n");
 
   bb.cli.register({
     name: "focus-sidebar",
-    summary: "Configure the Focus Sidebar thread list (focus window, closed threads)",
+    summary: "Configure the Focus Sidebar thread list (focus window, closed and automation threads)",
     commands: [
       { name: "show", summary: "Print the current settings", usage: "bb focus-sidebar show [--json]" },
       {
@@ -84,6 +92,11 @@ export default async function plugin(bb: BbPluginApi) {
         name: "closed",
         summary: "Show or hide closed (archived) threads in the Archive tab",
         usage: "bb focus-sidebar closed <on|off> [--json]",
+      },
+      {
+        name: "automations",
+        summary: "Let automation threads into Focus (on) or keep them in Archive (off)",
+        usage: "bb focus-sidebar automations <on|off> [--json]",
       },
     ],
     async run(argv) {
@@ -108,6 +121,10 @@ export default async function plugin(bb: BbPluginApi) {
         case "closed": {
           if (rest.length > 0 || (value !== "on" && value !== "off")) break;
           return reply(await writePrefs({ showClosed: value === "on" }));
+        }
+        case "automations": {
+          if (rest.length > 0 || (value !== "on" && value !== "off")) break;
+          return reply(await writePrefs({ showAutomations: value === "on" }));
         }
       }
       return { exitCode: 1, stderr: usage };

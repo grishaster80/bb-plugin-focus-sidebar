@@ -64,6 +64,7 @@ function usePrefs(): [FocusPrefs, (patch: Partial<FocusPrefs>) => void] {
   const [prefs, setPrefs] = useState<FocusPrefs>({
     focusHours: DEFAULT_FOCUS_HOURS,
     showClosed: false,
+    showAutomations: false,
   });
   const refetch = useCallback(() => {
     rpc.call("prefs_get").then(setPrefs, () => undefined);
@@ -636,8 +637,13 @@ function FocusThreadList({ activeThreadId, onNavigate }: PluginThreadListProps) 
 
   const trees = useMemo(() => buildTrees(threads), [threads]);
   const { focus, archive } = useMemo(
-    () => partitionTrees(trees, { now, focusHours: prefs.focusHours }),
-    [trees, now, prefs.focusHours],
+    () =>
+      partitionTrees(trees, {
+        now,
+        focusHours: prefs.focusHours,
+        showAutomations: prefs.showAutomations,
+      }),
+    [trees, now, prefs.focusHours, prefs.showAutomations],
   );
   const archiveOpenCount = archive.filter((tree) => !tree.thread.isArchived).length;
   const archiveHasUnread = archive.some(treeHasUnread);
@@ -803,6 +809,20 @@ function FocusThreadList({ activeThreadId, onNavigate }: PluginThreadListProps) 
               Archive
             </TabButton>
             <span className="flex-1" />
+            {tab === "focus" ? (
+              <label
+                className="flex h-6 cursor-pointer items-center gap-1 rounded px-1.5 text-xs text-muted-foreground hover:text-sidebar-foreground"
+                title="Let automation threads into Focus. Off: they stay in Archive unless they wait for you"
+              >
+                <input
+                  type="checkbox"
+                  className="size-3 accent-current"
+                  checked={prefs.showAutomations}
+                  onChange={(event) => setPrefs({ showAutomations: event.target.checked })}
+                />
+                Auto
+              </label>
+            ) : null}
             {tab === "archive" ? (
               <label
                 className="flex h-6 cursor-pointer items-center gap-1 rounded px-1.5 text-xs text-muted-foreground hover:text-sidebar-foreground"
