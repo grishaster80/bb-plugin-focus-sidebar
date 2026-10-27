@@ -1,7 +1,7 @@
-// Focus Sidebar — frontend. Replaces bb's sidebar thread list with two tabs:
-// Focus (threads active in the last few hours, plus anything running,
-// waiting for you, or pinned) and Archive (everything older, grouped by day,
-// newest first). A search box at the top filters both by title, project and
+// Focus Sidebar — frontend. Replaces bb's sidebar thread list with three
+// tabs: Focus (threads active in the last few hours, plus anything running,
+// waiting for you, or pinned), Periodic (threads automations run on a
+// schedule) and Archive (everything older, grouped by day, newest first). A search box at the top filters both by title, project and
 // branch at once, then adds full-text matches from message history. Every
 // row has a close button, and the thread header gets one too.
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -50,11 +50,11 @@ import type { FocusPrefs, rpcContract } from "./server";
 const PREFS_CHANGED = "prefs-changed";
 const ARCHIVE_ACTION_KEY = "bb--core/archive";
 const TAB_STORAGE_KEY = "focus-sidebar:tab";
-const AUTOMATIONS_OPEN_STORAGE_KEY = "focus-sidebar:automations-open";
 const ARCHIVE_PAGE = 150;
 const SEARCH_DEBOUNCE_MS = 250;
 
-type Tab = "focus" | "archive";
+type Tab = "focus" | "periodic" | "archive";
+const TABS: readonly Tab[] = ["focus", "periodic", "archive"];
 type Tree = ThreadTree<PluginSidebarThread>;
 
 // ---------------------------------------------------------------------------
@@ -95,9 +95,8 @@ function useNow(): number {
 function useStoredTab(): [Tab, (tab: Tab) => void] {
   const [tab, setTab] = useState<Tab>(() => {
     try {
-      return window.localStorage.getItem(TAB_STORAGE_KEY) === "archive"
-        ? "archive"
-        : "focus";
+      const stored = window.localStorage.getItem(TAB_STORAGE_KEY);
+      return TABS.find((candidate) => candidate === stored) ?? "focus";
     } catch {
       return "focus";
     }
@@ -113,26 +112,34 @@ function useStoredTab(): [Tab, (tab: Tab) => void] {
   return [tab, update];
 }
 
-/** Whether the Automations group under Focus is unfolded, per device. */
-function useStoredAutomationsOpen(): [boolean, () => void] {
-  const [open, setOpen] = useState(() => {
-    try {
-      return window.localStorage.getItem(AUTOMATIONS_OPEN_STORAGE_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const toggle = useCallback(() => {
-    setOpen((current) => {
-      try {
-        window.localStorage.setItem(AUTOMATIONS_OPEN_STORAGE_KEY, current ? "0" : "1");
-      } catch {
-        // Private mode: the group just is not remembered.
-      }
-      return !current;
-    });
-  }, []);
-  return [open, toggle];
+/**
+ * Threads that automations re-prompt on a schedule (their target threads).
+ * Threads automations spawn carry their origin already; these do not.
+ * Asked again whenever the minute ticks or the projects change.
+ */
+function usePeriodicThreadIds(projectIds: readonly string[], now: number): ReadonlySet<string> {
+  const rpc = useRpc<typeof rpcContract>();
+  const [ids, setIds] = useState<ReadonlySet<string>>(new Set());
+  const projectKey = projectIds.join(",");
+  useEffect(() => {
+    if (projectKey === "") return;
+    let cancelled = false;
+    rpc.call("periodic_threads", { projectIds: projectKey.split(",") }).then(
+      ({ threadIds }) => {
+        if (cancelled) return;
+        setIds((current) =>
+          current.size === threadIds.length && threadIds.every((id) => current.has(id))
+            ? current
+            : new Set(threadIds),
+        );
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [rpc, projectKey, now]);
+  return ids;
 }
 
 function actionTarget(thread: PluginSidebarThread): PluginThreadActionTarget {
@@ -628,44 +635,6 @@ function GroupHeader({ children }: { children: ReactNode }) {
   );
 }
 
-/** Folded group of active automation threads at the bottom of Focus. */
-function AutomationsGroup({
-  trees,
-  open,
-  onToggle,
-  children,
-}: {
-  trees: readonly Tree[];
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  const running = trees.some((tree) => tree.isLive);
-  return (
-    <section aria-label="Automations" className="mt-2">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={onToggle}
-        title="Threads that bb's automations run on a schedule. They are folded here so a job that runs every few minutes doesn't crowd Focus; one that waits for your answer moves up into Focus."
-        className="flex w-full items-center gap-1 rounded px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground hover:text-sidebar-foreground"
-      >
-        <Icon
-          name="ChevronRight"
-          className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")}
-          aria-hidden
-        />
-        Automations
-        <Count value={trees.length} dot={trees.some(treeHasUnread)} />
-        {running && !open ? (
-          <span className="ml-auto normal-case tracking-normal opacity-70">running</span>
-        ) : null}
-      </button>
-      {open ? children : null}
-    </section>
-  );
-}
-
 function EmptyNote({ children }: { children: ReactNode }) {
   return <p className="px-2 py-6 text-center text-xs text-muted-foreground">{children}</p>;
 }
@@ -675,8 +644,9 @@ function EmptyNote({ children }: { children: ReactNode }) {
 
 function FocusThreadList({ activeThreadId, onNavigate }: PluginThreadListProps) {
   const [prefs, setPrefs] = usePrefs();
-  const [tab, setTab] = useStoredTab();
-  const [automationsOpen, toggleAutomations] = useStoredAutomationsOpen();
+  const [storedTab, setTab] = useStoredTab();
+  // With periodic threads mixed into Focus there is no Periodic tab.
+  const tab = prefs.showAutomations && storedTab === "periodic" ? "focus" : storedTab;
   const [query, setQuery] = useState("");
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
   const [archiveLimit, setArchiveLimit] = useState(ARCHIVE_PAGE);
@@ -697,15 +667,19 @@ function FocusThreadList({ activeThreadId, onNavigate }: PluginThreadListProps) 
     [projects],
   );
 
+  const projectIds = useMemo(() => projects.map((project) => project.id).sort(), [projects]);
+  const periodicThreadIds = usePeriodicThreadIds(projectIds, now);
+
   const trees = useMemo(() => buildTrees(threads), [threads]);
-  const { focus, automations, archive } = useMemo(
+  const { focus, periodic, archive } = useMemo(
     () =>
       partitionTrees(trees, {
         now,
         focusHours: prefs.focusHours,
         showAutomations: prefs.showAutomations,
+        periodicThreadIds,
       }),
-    [trees, now, prefs.focusHours, prefs.showAutomations],
+    [trees, now, prefs.focusHours, prefs.showAutomations, periodicThreadIds],
   );
   const archiveOpenCount = archive.filter((tree) => !tree.thread.isArchived).length;
   const archiveHasUnread = archive.some(treeHasUnread);
@@ -789,45 +763,43 @@ function FocusThreadList({ activeThreadId, onNavigate }: PluginThreadListProps) 
       </>
     );
   } else if (tab === "focus") {
-    body = (
-      <>
-        {focus.length === 0 ? (
-          <EmptyNote>
-            Nothing active in the last {prefs.focusHours}h.
-            {archive.length > 0 ? " Older threads are in Archive." : ""}
-          </EmptyNote>
-        ) : (
-          focus.map((tree) => (
-            <TreeRows
-              key={tree.thread.id}
-              {...rowProps}
-              tree={tree}
-              depth={0}
-              timeStyle="age"
-              projectName={projectNames.get(tree.thread.projectId)}
-            />
-          ))
-        )}
-        {automations.length > 0 ? (
-          <AutomationsGroup
-            trees={automations}
-            open={automationsOpen}
-            onToggle={toggleAutomations}
-          >
-            {automations.map((tree) => (
-              <TreeRows
-                key={tree.thread.id}
-                {...rowProps}
-                tree={tree}
-                depth={0}
-                timeStyle="age"
-                projectName={projectNames.get(tree.thread.projectId)}
-              />
-            ))}
-          </AutomationsGroup>
-        ) : null}
-      </>
-    );
+    body =
+      focus.length === 0 ? (
+        <EmptyNote>
+          Nothing active in the last {prefs.focusHours}h.
+          {archive.length > 0 ? " Older threads are in Archive." : ""}
+        </EmptyNote>
+      ) : (
+        focus.map((tree) => (
+          <TreeRows
+            key={tree.thread.id}
+            {...rowProps}
+            tree={tree}
+            depth={0}
+            timeStyle="age"
+            projectName={projectNames.get(tree.thread.projectId)}
+          />
+        ))
+      );
+  } else if (tab === "periodic") {
+    body =
+      periodic.length === 0 ? (
+        <EmptyNote>
+          No periodic threads. Threads that bb&apos;s automations run on a schedule show up
+          here instead of in Focus.
+        </EmptyNote>
+      ) : (
+        periodic.map((tree) => (
+          <TreeRows
+            key={tree.thread.id}
+            {...rowProps}
+            tree={tree}
+            depth={0}
+            timeStyle="age"
+            projectName={projectNames.get(tree.thread.projectId)}
+          />
+        ))
+      );
   } else {
     const visible = archive.slice(0, archiveLimit);
     const groups = groupByDay(visible, now);
@@ -884,6 +856,17 @@ function FocusThreadList({ activeThreadId, onNavigate }: PluginThreadListProps) 
             >
               Focus
             </TabButton>
+            {!prefs.showAutomations ? (
+              <TabButton
+                selected={tab === "periodic"}
+                onClick={() => setTab("periodic")}
+                badge={<Count value={periodic.length} dot={periodic.some(treeHasUnread)} />}
+              >
+                <span title="Threads that bb's automations run on a schedule. One that waits for your answer, or that you pinned, shows in Focus instead.">
+                  Periodic
+                </span>
+              </TabButton>
+            ) : null}
             <TabButton
               selected={tab === "archive"}
               onClick={() => setTab("archive")}
@@ -983,7 +966,7 @@ export default definePluginApp((app) => {
     id: "focus",
     title: "Focus",
     description:
-      "Recent threads in Focus, older ones in a dated Archive, with search and one-click close.",
+      "Recent threads in Focus, scheduled ones in Periodic, older ones in a dated Archive, with search and one-click close.",
     component: FocusThreadList,
   });
   app.slots.experimental_threadHeaderAction({

@@ -39,19 +39,20 @@ function thread(id: string, hoursAgo: number, extra: Partial<FocusThread> = {}):
   };
 }
 
-const split = (threads: FocusThread[]) => {
-  const { focus, automations, archive } = partitionTrees(buildTrees(threads), {
+const split = (threads: FocusThread[], periodicThreadIds?: ReadonlySet<string>) => {
+  const { focus, periodic, archive } = partitionTrees(buildTrees(threads), {
     now: NOW,
     focusHours: 8,
+    periodicThreadIds,
   });
   const ids = (trees: typeof focus) => trees.map((t) => t.thread.id);
-  return { focus: ids(focus), automations: ids(automations), archive: ids(archive) };
+  return { focus: ids(focus), periodic: ids(periodic), archive: ids(archive) };
 };
 
 test("recent threads stay in Focus, older ones go to Archive", () => {
   assert.deepEqual(split([thread("a", 1), thread("b", 7.9), thread("c", 9), thread("d", 50)]), {
     focus: ["a", "b"],
-    automations: [],
+    periodic: [],
     archive: ["c", "d"],
   });
 });
@@ -71,7 +72,7 @@ test("running, waiting, queued and pinned threads stay in Focus", () => {
   assert.equal(result.focus.length, 4);
 });
 
-test("recent automation threads fold into their own group, quiet ones go to Archive", () => {
+test("automation threads go to Periodic however old, unless they need you", () => {
   const auto = { originPluginId: "automations" };
   const result = split([
     thread("recent", 0.1, auto),
@@ -82,17 +83,36 @@ test("recent automation threads fold into their own group, quiet ones go to Arch
     thread("mine", 0.1),
   ]);
   assert.deepEqual(result.focus.sort(), ["asks", "mine", "pinned"]);
-  assert.deepEqual(result.automations.sort(), ["recent", "running"]);
-  assert.deepEqual(result.archive, ["quiet"]);
+  assert.deepEqual(result.periodic.sort(), ["quiet", "recent", "running"]);
+  assert.deepEqual(result.archive, []);
 });
 
-test("automation threads behave like any other with showAutomations on", () => {
-  const { focus, automations } = partitionTrees(
-    buildTrees([thread("recent", 1, { originPluginId: "automations" })]),
-    { now: NOW, focusHours: 8, showAutomations: true },
+test("a thread an automation re-prompts goes to Periodic", () => {
+  const result = split(
+    [thread("alerts", 0.1, { originPluginId: "provider-switch" }), thread("mine", 0.1)],
+    new Set(["alerts"]),
   );
-  assert.deepEqual(focus.map((t) => t.thread.id), ["recent"]);
-  assert.deepEqual(automations, []);
+  assert.deepEqual(result.focus, ["mine"]);
+  assert.deepEqual(result.periodic, ["alerts"]);
+});
+
+test("periodic threads behave like any other with showAutomations on", () => {
+  const { focus, periodic } = partitionTrees(
+    buildTrees([
+      thread("recent", 1, { originPluginId: "automations" }),
+      thread("target", 1),
+    ]),
+    { now: NOW, focusHours: 8, showAutomations: true, periodicThreadIds: new Set(["target"]) },
+  );
+  assert.deepEqual(focus.map((t) => t.thread.id).sort(), ["recent", "target"]);
+  assert.deepEqual(periodic, []);
+});
+
+test("a closed periodic thread goes to Archive", () => {
+  assert.deepEqual(
+    split([thread("x", 1, { isArchived: true, archivedAt: NOW })], new Set(["x"])).archive,
+    ["x"],
+  );
 });
 
 test("closed threads always go to Archive", () => {

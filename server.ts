@@ -1,7 +1,8 @@
 // Focus Sidebar — backend. Keeps the list's preferences (focus window and
 // whether closed threads show in the Archive) in plugin storage, so the
 // phone, the laptop, and every window share them, and exposes them over RPC
-// and the `bb focus-sidebar` CLI command.
+// and the `bb focus-sidebar` CLI command. Also tells the list which threads
+// automations re-prompt on a schedule, for the Periodic tab.
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { clampFocusHours, DEFAULT_FOCUS_HOURS } from "./lib/focus";
@@ -28,7 +29,20 @@ export const rpcContract = defineRpcContract({
     input: prefsSchema.partial(),
     output: prefsSchema,
   },
+  periodic_threads: {
+    input: z.object({ projectIds: z.array(z.string()).max(500) }),
+    output: z.object({ threadIds: z.array(z.string()) }),
+  },
 });
+
+// What we read from the automations plugin's `automations_list`.
+const automationsSchema = z.array(
+  z.looseObject({
+    execution: z.looseObject({ targetThreadId: z.string().nullish() }),
+    lastRunThreadId: z.string().nullish(),
+  }),
+);
+const AUTOMATIONS_CACHE_MS = 60_000;
 
 /** Realtime channel app.tsx listens on; the payload is the new prefs. */
 export const PREFS_CHANGED = "prefs-changed";
@@ -58,9 +72,42 @@ export default async function plugin(bb: BbPluginApi) {
     return next;
   }
 
+  // Per project: the threads its automations run in, and when we asked.
+  const automationThreads = new Map<string, { at: number; threadIds: string[] }>();
+
+  async function periodicThreadsOf(projectId: string): Promise<string[]> {
+    const cached = automationThreads.get(projectId);
+    if (cached !== undefined && Date.now() - cached.at < AUTOMATIONS_CACHE_MS) {
+      return cached.threadIds;
+    }
+    try {
+      const automations = await bb.sdk.plugins.callRpc({
+        pluginId: "automations",
+        method: "automations_list",
+        input: { projectId },
+        outputSchema: automationsSchema,
+      });
+      const threadIds = automations.flatMap((automation) =>
+        [automation.execution.targetThreadId, automation.lastRunThreadId].filter(
+          (id): id is string => typeof id === "string",
+        ),
+      );
+      automationThreads.set(projectId, { at: Date.now(), threadIds });
+      return threadIds;
+    } catch (error) {
+      // Automations off or the call failed: keep what we knew.
+      bb.log.debug(`automations_list failed for ${projectId}: ${String(error)}`);
+      return cached?.threadIds ?? [];
+    }
+  }
+
   bb.rpc.register(rpcContract, {
     prefs_get: () => readPrefs(),
     prefs_set: (patch) => writePrefs(patch),
+    periodic_threads: async ({ projectIds }) => {
+      const lists = await Promise.all([...new Set(projectIds)].map(periodicThreadsOf));
+      return { threadIds: [...new Set(lists.flat())] };
+    },
   });
 
   const usage = [
@@ -68,14 +115,14 @@ export default async function plugin(bb: BbPluginApi) {
     "  bb focus-sidebar show [--json]           Print the current settings",
     "  bb focus-sidebar hours <1-168> [--json]  Keep threads active in the last N hours in Focus",
     "  bb focus-sidebar closed <on|off> [--json] Show closed (archived) threads in the Archive tab",
-    "  bb focus-sidebar automations <on|off> [--json] Mix automation threads into Focus (on) or fold them into their group (off)",
+    "  bb focus-sidebar automations <on|off> [--json] Mix periodic (automation) threads into Focus (on) or keep them in the Periodic tab (off)",
   ].join("\n");
 
   const describe = (prefs: FocusPrefs) =>
     [
       `Focus window: last ${prefs.focusHours}h`,
       `Closed threads in Archive: ${prefs.showClosed ? "shown" : "hidden"}`,
-      `Automation threads: ${prefs.showAutomations ? "mixed into Focus" : "folded into the Automations group"}`,
+      `Periodic (automation) threads: ${prefs.showAutomations ? "mixed into Focus" : "in the Periodic tab"}`,
     ].join("\n");
 
   bb.cli.register({
@@ -95,7 +142,7 @@ export default async function plugin(bb: BbPluginApi) {
       },
       {
         name: "automations",
-        summary: "Mix automation threads into Focus (on) or fold them into the Automations group (off)",
+        summary: "Mix periodic (automation) threads into Focus (on) or keep them in the Periodic tab (off)",
         usage: "bb focus-sidebar automations <on|off> [--json]",
       },
     ],

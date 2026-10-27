@@ -63,9 +63,16 @@ export function isLiveThread(thread: FocusThread): boolean {
   );
 }
 
-/** Spawned or re-prompted on a schedule by bb's automations plugin. */
-export function isAutomationThread(thread: FocusThread): boolean {
-  return thread.originPluginId === AUTOMATIONS_PLUGIN_ID;
+/**
+ * Run on a schedule: spawned by bb's automations plugin, or a thread an
+ * automation re-prompts on every tick (its target thread). The second kind
+ * has no automation origin of its own, so the caller passes their ids.
+ */
+export function isPeriodicThread(
+  thread: FocusThread,
+  periodicThreadIds: ReadonlySet<string> = new Set(),
+): boolean {
+  return thread.originPluginId === AUTOMATIONS_PLUGIN_ID || periodicThreadIds.has(thread.id);
 }
 
 /**
@@ -141,34 +148,40 @@ export function treeHasUnread<T extends FocusThread>(tree: ThreadTree<T>): boole
 }
 
 /**
- * Split open threads into Focus and Archive. A tree stays in Focus when it
- * had activity inside the window, is pinned, or is running or waiting for
- * the user. Closed (bb-archived) trees always go to the Archive. Opening a
+ * Split open threads into Focus, Periodic and Archive. A tree stays in Focus
+ * when it had activity inside the window, is pinned, or is running or waiting
+ * for the user. Closed (bb-archived) trees always go to the Archive. Opening a
  * thread does not move it: only new activity brings it back to Focus.
- * An automation tree that ticks every few minutes would never leave Focus, so
- * unless `showAutomations` is on it goes to `automations` instead (a folded
- * group under Focus), and only a pinned one or one waiting for the user stays
- * in Focus itself. Automation trees that went quiet go to Archive as usual.
+ * A periodic tree that ticks every few minutes would never leave Focus, so
+ * unless `showAutomations` is on it goes to `periodic` (its own tab) however
+ * old it is, and only a pinned one or one waiting for the user stays in Focus.
  */
 export function partitionTrees<T extends FocusThread>(
   trees: readonly ThreadTree<T>[],
-  options: { now: number; focusHours: number; showAutomations?: boolean },
-): { focus: ThreadTree<T>[]; automations: ThreadTree<T>[]; archive: ThreadTree<T>[] } {
+  options: {
+    now: number;
+    focusHours: number;
+    showAutomations?: boolean;
+    periodicThreadIds?: ReadonlySet<string>;
+  },
+): { focus: ThreadTree<T>[]; periodic: ThreadTree<T>[]; archive: ThreadTree<T>[] } {
   const cutoff = options.now - options.focusHours * HOUR_MS;
   const focus: ThreadTree<T>[] = [];
-  const automations: ThreadTree<T>[] = [];
+  const periodic: ThreadTree<T>[] = [];
   const archive: ThreadTree<T>[] = [];
   for (const tree of trees) {
     if (tree.thread.isArchived) {
       archive.push(tree);
       continue;
     }
-    const recent = tree.lastActivity >= cutoff || tree.isLive;
-    if (options.showAutomations !== true && isAutomationThread(tree.thread)) {
-      if (tree.thread.isPinned || treeWaitsForUser(tree)) focus.push(tree);
-      else (recent ? automations : archive).push(tree);
+    if (
+      options.showAutomations !== true &&
+      isPeriodicThread(tree.thread, options.periodicThreadIds)
+    ) {
+      (tree.thread.isPinned || treeWaitsForUser(tree) ? focus : periodic).push(tree);
       continue;
     }
+    const recent = tree.lastActivity >= cutoff || tree.isLive;
     (recent || tree.thread.isPinned ? focus : archive).push(tree);
   }
   // Pinned threads lead Focus, then newest first.
@@ -177,7 +190,7 @@ export function partitionTrees<T extends FocusThread>(
       Number(b.thread.isPinned) - Number(a.thread.isPinned) ||
       b.lastActivity - a.lastActivity,
   );
-  return { focus, automations, archive };
+  return { focus, periodic, archive };
 }
 
 function startOfLocalDay(time: number): number {
