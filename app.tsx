@@ -606,7 +606,7 @@ function TabButton({
       aria-selected={selected}
       onClick={onClick}
       className={cn(
-        "flex h-6 items-center gap-1 rounded px-2 text-xs font-medium",
+        "flex h-6 items-center gap-1 rounded px-1.5 text-xs font-medium",
         selected
           ? "bg-sidebar-accent text-sidebar-accent-foreground"
           : "text-muted-foreground hover:text-sidebar-foreground",
@@ -848,62 +848,68 @@ function FocusThreadList({ activeThreadId, onNavigate }: PluginThreadListProps) 
       <div className="sticky top-0 z-10 flex flex-col gap-1.5 bg-sidebar px-2 pb-1.5 pt-1">
         <SearchBox value={query} onChange={setQuery} />
         {!searching ? (
-          <div className="flex items-center gap-1" role="tablist" aria-label="Thread lists">
-            <TabButton
-              selected={tab === "focus"}
-              onClick={() => setTab("focus")}
-              badge={<Count value={focus.length} />}
-            >
-              Focus
-            </TabButton>
-            {!prefs.showAutomations ? (
+          <div className="flex flex-wrap items-center gap-0.5">
+            <div className="flex items-center gap-0.5" role="tablist" aria-label="Thread lists">
               <TabButton
-                selected={tab === "periodic"}
-                onClick={() => setTab("periodic")}
-                badge={<Count value={periodic.length} dot={periodic.some(treeHasUnread)} />}
+                selected={tab === "focus"}
+                onClick={() => setTab("focus")}
+                badge={<Count value={focus.length} />}
               >
-                <span title="Threads that bb's automations run on a schedule. One that waits for your answer, or that you pinned, shows in Focus instead.">
-                  Periodic
-                </span>
+                Focus
               </TabButton>
-            ) : null}
-            <TabButton
-              selected={tab === "archive"}
-              onClick={() => setTab("archive")}
-              badge={<Count value={archiveOpenCount} dot={archiveHasUnread} />}
-            >
-              Archive
-            </TabButton>
-            <span className="flex-1" />
-            {tab === "archive" ? (
-              <label
-                className="flex h-6 cursor-pointer items-center gap-1 rounded px-1.5 text-xs text-muted-foreground hover:text-sidebar-foreground"
-                title="Also list threads you closed (bb's Archived)"
+              {!prefs.showAutomations ? (
+                <TabButton
+                  selected={tab === "periodic"}
+                  onClick={() => setTab("periodic")}
+                  badge={<Count value={periodic.length} dot={periodic.some(treeHasUnread)} />}
+                >
+                  <span title="Threads that bb's automations run on a schedule. One that waits for your answer, or that you pinned, shows in Focus instead.">
+                    Periodic
+                  </span>
+                </TabButton>
+              ) : null}
+              <TabButton
+                selected={tab === "archive"}
+                onClick={() => setTab("archive")}
+                badge={<Count value={archiveOpenCount} dot={archiveHasUnread} />}
               >
-                <input
-                  type="checkbox"
-                  className="size-3 accent-current"
-                  checked={prefs.showClosed}
-                  onChange={(event) => setPrefs({ showClosed: event.target.checked })}
-                />
-                Closed
-              </label>
-            ) : null}
-            <select
-              aria-label="Focus window"
-              title="Threads active within this window stay in Focus"
-              value={prefs.focusHours}
-              onChange={(event) => setPrefs({ focusHours: Number(event.target.value) })}
-              className="h-6 cursor-pointer rounded bg-transparent px-1 text-xs text-muted-foreground hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
-            >
-              {[...new Set<number>([...FOCUS_HOUR_CHOICES, prefs.focusHours])]
-                .sort((a, b) => a - b)
-                .map((hours) => (
-                  <option key={hours} value={hours}>
-                    {hours}h
-                  </option>
-                ))}
-            </select>
+                Archive
+              </TabButton>
+            </div>
+            {/* Wraps under the tabs when the sidebar is too narrow for both. */}
+            <div className="ml-auto flex items-center">
+              {tab === "archive" ? (
+                <label
+                  className="flex h-6 cursor-pointer items-center gap-1 rounded px-1.5 text-xs text-muted-foreground hover:text-sidebar-foreground"
+                  title="Also list threads you closed (bb's Archived)"
+                >
+                  <input
+                    type="checkbox"
+                    className="size-3 accent-current"
+                    checked={prefs.showClosed}
+                    onChange={(event) => setPrefs({ showClosed: event.target.checked })}
+                  />
+                  Closed
+                </label>
+              ) : null}
+              {tab !== "periodic" ? (
+                <select
+                  aria-label="Focus window"
+                  title="Threads active within this window stay in Focus"
+                  value={prefs.focusHours}
+                  onChange={(event) => setPrefs({ focusHours: Number(event.target.value) })}
+                  className="h-6 cursor-pointer rounded bg-transparent px-1 text-xs text-muted-foreground hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
+                >
+                  {[...new Set<number>([...FOCUS_HOUR_CHOICES, prefs.focusHours])]
+                    .sort((a, b) => a - b)
+                    .map((hours) => (
+                      <option key={hours} value={hours}>
+                        {hours}h
+                      </option>
+                    ))}
+                </select>
+              ) : null}
+            </div>
           </div>
         ) : null}
       </div>
